@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="initial-scale=1.0, width=device-width, maximum-scale=1.0, user-scalable=no">
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="translucent-black">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Geocode Details</title>
+
+    <link rel="stylesheet" href="https://js.arcgis.com/3.21/dijit/themes/claro/claro.css">
+    <link rel="stylesheet" href="https://js.arcgis.com/3.21/esri/css/esri.css">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            color: #353129;
+        }
+
+        fieldset {
+            border: 1px solid #353129;
+            color: #353129;
+        }
+        #map{
+            margin: 0;
+            padding: 0;
+        }
+        #footerPane{
+            border: none;
+            height: 300px;
+        }
+        @-webkit-keyframes
+        pulse
+        {
+            0%
+            {
+                opacity: 1.0;
+
+            }
+            45%
+            {
+                opacity: .20;
+
+            }
+            100%
+            {
+                opacity: 1.0;
+
+            }
+        }
+        @-moz-keyframes
+        pulse
+        {
+            0%
+            {
+                opacity: 1.0;
+            }
+            45%
+            {
+                opacity: .20;
+
+            }
+            100%
+            {
+                opacity: 1.0;
+            }
+        }
+
+        #map_graphics_layer {
+            -webkit-animation-duration: 3s;
+            -webkit-animation-iteration-count: infinite;
+            -webkit-animation-name: pulse;
+            -moz-animation-duration: 3s;
+            -moz-animation-iteration-count: infinite;
+            -moz-animation-name: pulse;
+        }
+    </style>
+
+    <script src="https://js.arcgis.com/3.21/"></script>
+    <script>
+        var locator, map;
+        var multi =[];
+        var least=[];
+        require([
+            "esri/map", "esri/tasks/locator",
+            "esri/SpatialReference", "esri/graphic",
+            "esri/symbols/SimpleLineSymbol", "esri/symbols/SimpleMarkerSymbol",
+            "esri/symbols/Font", "esri/symbols/TextSymbol",
+            "esri/geometry/Point", "esri/geometry/Extent",
+            "esri/geometry/webMercatorUtils",
+            "dojo/_base/array", "esri/Color",
+            "dojo/number", "dojo/parser", "dojo/dom", "dojo/json", "dijit/registry",
+
+            "dijit/form/Button", "dijit/form/Textarea",
+            "dijit/layout/BorderContainer", "dijit/layout/ContentPane", "dojo/domReady!"
+        ], function(
+            Map, Locator,
+            SpatialReference, Graphic,
+            SimpleLineSymbol, SimpleMarkerSymbol,
+            Font, TextSymbol,
+            Point, Extent,
+            webMercatorUtils,
+            arrayUtils, Color,
+            number, parser, dom, JSON, registry
+        ) {
+            parser.parse();
+
+            map = new Map("map",{
+                basemap: "topo",
+                center: [-96.311, 43.676],
+                zoom: 3
+            });
+            map.on("load", initFunc);
+
+            function orientationChanged() {
+                if(map){
+                    map.reposition();
+                    map.resize();
+                }
+            }
+
+            function initFunc(map) {
+                if( navigator.geolocation ) {
+                    navigator.geolocation.getCurrentPosition(zoomToLocation, locationError);
+                    watchId = navigator.geolocation.watchPosition(showLocation, locationError);
+                } else {
+                    alert("Browser doesn't support Geolocation. Visit http://caniuse.com to see browser support for the Geolocation API.");
+                }
+            }
+
+            function locationError(error) {
+                //error occurred so stop watchPosition
+                if( navigator.geolocation ) {
+                    navigator.geolocation.clearWatch(watchId);
+                }
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        alert("Location not provided");
+                        break;
+
+                    case error.POSITION_UNAVAILABLE:
+                        alert("Current location not available");
+                        break;
+
+                    case error.TIMEOUT:
+                        alert("Timeout");
+                        break;
+
+                    default:
+                        alert("unknown error");
+                        break;
+                }
+            }
+
+            function zoomToLocation(location) {
+                var pt = new Point(location.coords.longitude, location.coords.latitude);
+                multi.push(location.coords.longitude, location.coords.latitude);
+                addGraphic(pt);
+                map.centerAndZoom(pt, 12);
+            }
+
+            function showLocation(location) {
+                //zoom to the users location and add a graphic
+                var pt = new Point(location.coords.longitude, location.coords.latitude);
+                if ( !graphic ) {
+                    addGraphic(pt);
+                } else { // move the graphic if it already exists
+                    graphic.setGeometry(pt);
+                }
+                map.centerAt(pt);
+            }
+
+            function addGraphic(pt){
+                var symbol = new SimpleMarkerSymbol(
+                    SimpleMarkerSymbol.STYLE_CIRCLE,
+                    12,
+                    new SimpleLineSymbol(
+                        SimpleLineSymbol.STYLE_SOLID,
+                        new Color([210, 105, 30, 0.5]),
+                        8
+                    ),
+                    new Color([210, 105, 30, 0.9])
+                );
+                graphic = new Graphic(pt, symbol);
+                map.graphics.add(graphic);
+            }
+
+            locator = new Locator("https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer");
+
+            registry.byId("locate").on("click", locate);
+
+            //Draw and zoom to the result when the geocoding is complete
+            locator.on("address-to-locations-complete", function(evt) {
+                map.graphics.clear();
+                arrayUtils.forEach(evt.addresses, function(geocodeResult, index) {
+                    //create a random color for the text and marker symbol
+                    var r = Math.floor(Math.random() * 250);
+                    var g = Math.floor(Math.random() * 100);
+                    var b = Math.floor(Math.random() * 100);
+
+                    var symbol = new SimpleMarkerSymbol(
+                        SimpleMarkerSymbol.STYLE_CIRCLE,
+                        20,
+                        new SimpleLineSymbol(
+                            SimpleLineSymbol.STYLE_SOLID,
+                            new Color([r, g, b, 0.5]),
+                            10
+                        ), new Color([r, g, b, 0.9]));
+                    var pointMeters = webMercatorUtils.geographicToWebMercator(geocodeResult.location);
+                    var locationGraphic = new Graphic(pointMeters, symbol);
+
+                    var font = new Font().setSize("12pt").setWeight(Font.WEIGHT_BOLD);
+                    var textSymbol = new TextSymbol(
+                        (index + 1) + ".) " + geocodeResult.address,
+                        font,
+                        new Color([r, g, b, 0.8])
+                    ).setOffset( 5, 15);
+                    //add the location graphic and text with the address to the map
+                    map.graphics.add(locationGraphic);
+                    map.graphics.add(new Graphic(pointMeters, textSymbol));
+                });
+                var ptAttr = evt.addresses[0].attributes;
+                var minx = parseFloat(ptAttr.Xmin);
+                var maxx = parseFloat(ptAttr.Xmax);
+                var miny = parseFloat(ptAttr.Ymin);
+                var maxy = parseFloat(ptAttr.Ymax);
+
+                var esriExtent = new Extent(minx, miny, maxx, maxy, new SpatialReference({wkid:4326}));
+                map.setExtent(webMercatorUtils.geographicToWebMercator(esriExtent));
+
+                showResults(evt.addresses);
+            });
+
+            map.on("extent-change", updateExtent);
+
+            function updateExtent() {
+                dom.byId("currentextent").innerHTML = "<b>Current Extent JSON:</b> " + JSON.stringify(map.extent.toJson());
+                dom.byId("currentextent").innerHTML += "<br/><b>Current Zoom level:</b> " + map.getLevel();
+            }
+
+            function showResults(results) {
+                var rdiv = dom.byId("resultsdiv");
+                rdiv.innerHTML = "<p><b>Results : " + results.length + "</b></p>";
+
+                var content = [];
+                arrayUtils.forEach(results, function(result, index) {
+                    var x = result.location.x.toFixed(5);
+                    var y = result.location.y.toFixed(5);
+                    content.push("<fieldset>");
+                    content.push("<legend><b>" + (index + 1) + ". " + result.address + "</b></legend>");
+                    content.push("<i>Score:</i> " + result.score);
+                    content.push("<br/>");
+                    content.push("<i>Address Found In</i> : " + result.address);
+                    content.push("<br/><br/>");
+                    content.push("Latitude (y): " + y);
+                    content.push("&nbsp;&nbsp;");
+                    content.push("Longitude (x): " + x);
+                    content.push("<br/><br/>");
+                    content.push("<b>GeoRSS-Simple</b><br/>");
+                    content.push("&lt;georss:point&gt;" + y + " " + x + "&lt;/georss:point&gt;");
+                    content.push("<br/><br/>");
+                    content.push("<b>GeoRSS-GML</b><br/>");
+                    content.push("&lt;georss:where&gt;&lt;gml:Point&gt;&lt;gml:pos&gt;" + y + " " + x + "&lt;/gml:pos&gt;&lt;gml:Point&gt;&lt;/georss:where&gt;");
+                    content.push("<br/><br/>");
+                    content.push("<b>Esri JSON</b><br/>");
+                    content.push("<b>WGS:</b> " + JSON.stringify(result.location.toJson()));
+                    content.push("<br/>");
+
+                    var location_wm = webMercatorUtils.geographicToWebMercator(result.location);
+
+                    content.push("<b>WM:</b> " + JSON.stringify(location_wm.toJson()));
+                    content.push("<br/><br/>");
+                    content.push("<b>Geo JSON</b><br/>");
+                    content.push('"geometry": {"type": "Point", "coordinates": [' + y + ',' + x + ']}');
+                    content.push("<br/><br/>");
+                    content.push("<input type='button' value='Center At Address' onclick='zoomTo(" + y + "," + x + ")'/>");
+                    content.push("</fieldset>");
+
+
+                });
+                rdiv.innerHTML += content.join("");
+            }
+
+
+
+            //Perform the geocode. This function runs when the "Locate" button is pushed.
+            function locate() {
+                var address = {
+                    SingleLine: dom.byId("address").value
+                };
+                var options = {
+                    address: address,
+                    outFields: ["*"]
+                };
+                //optionally return the out fields if you need to calculate the extent of the geocoded point
+                locator.addressToLocations(options);
+            }
+        });
+
+        function zoomTo(lat, lon) {
+            require([
+                "esri/geometry/Point", "esri/geometry/webMercatorUtils"
+            ], function(Point, webMercatorUtils) {
+                multi.push(lat,lon);
+                alert("location selected");
+                var point = new Point(lon, lat, {
+                    wkid: "4326"
+                });
+                var wmpoint = webMercatorUtils.geographicToWebMercator(point);
+                map.centerAt(wmpoint);
+
+            });
+        }
+        var test=[];
+        function multi1() {
+
+            var amt=document.getElementById("amt").value;
+
+            var i,j,k;
+            // for(k=amt;k>0;k--){
+            for(i=2;i<((amt+1)*2);i=i+2) {
+                var ar = distance(multi[0], multi[1], multi[i], multi[i + 1], 'N');
+
+                // alert("distance" + (i / 2) + "=" + ar);
+                least.push("location source to " + (i / 2) + ":" + ar);
+                test.push({ // object with properties name, lat, lng and address
+                    distance: ar,
+                    lat: multi[i],
+                    long: multi[i + 1]
+
+                });
+            }
+
+            var smallest = test[0]["distance"];
+
+            for(var i=1; i<test.length; i++){
+                if(test[i]["distance"] < smallest){
+                    smallest = test[i]["distance"];
+                    j=i;
+                }
+            }
+            //  alert("witout sort"+test[0]["distance"]+" "+test[1]["distance"]+" "+test[2]["distance"]);
+            // alert("smallest:"+j);
+            document.getElementById("distance1").innerHTML=" Distance 1: from current location : "+test[0]["distance"];
+            document.getElementById("distance2").innerHTML=" Distance 2: from current location : "+test[1]["distance"];
+            document.getElementById("distance3").innerHTML=" Distance 3: from current location : "+test[2]["distance"];
+
+            document.getElementById("result1").innerHTML=" Smallest distance  from current location is : "+smallest;
+
+
+//            alert("witout sort"+test[0]["distance"]+" "+test[1]["distance"]+" "+test[2]["distance"]);
+//            test.sort(function (a, b) {
+//                return b.distance - a.distance;
+//            });
+//          alert("shortest distance"+test[0]["distance"]+" "+test[1]["distance"]+" "+test[2]["distance"]);
+
+//            alert(test[1]["distance"]);
+            var multi2=[];
+            for(i=0,j=0;i<test.length;i++,j=j+2)
+            {
+                multi2[j] = test[i]["lat"];
+                multi2[j+1] = test[i]["long"];
+            }
+            alert("multi2"+multi2);
+            multi=multi2.slice();
+            alert("multi:"+multi);
+
+
+
+            //}
+        }
+
+
+        function distance(lat1, lon1, lat2, lon2, unit) {
+            var radlat1 = Math.PI * lat1/180
+            var radlat2 = Math.PI * lat2/180
+            var theta = lon1-lon2
+            var radtheta = Math.PI * theta/180
+            var dist = Math.sin(radlat1) * Math.sin(radlat2) + Math.cos(radlat1) * Math.cos(radlat2) * Math.cos(radtheta);
+            dist = Math.acos(dist)
+            dist = dist * 180/Math.PI
+            dist = dist * 60 * 1.1515
+            if (unit=="K") { dist = dist * 1.609344 }
+            if (unit=="N") { dist = dist * 0.8684 }
+            return dist
+        }
+
+    </script>
+</head>
+
+<body class="claro" onorientationchange="orientationChanged();">
+<div data-dojo-type="dijit/layout/BorderContainer"
+     data-dojo-props="gutters:false, design:'sidebar'"
+     style="width:100%;height:100%;">
+
+    <div id="map"
+         data-dojo-type="dijit/layout/ContentPane"
+         data-dojo-props="region:'center'">
+    </div>
+    <div id="map2" style="display:none;"
+         data-dojo-type="dijit/layout/ContentPane"
+         data-dojo-props="region:'center'">
+    </div>
+
+    <div id="footerPane"
+         data-dojo-type="dijit/layout/ContentPane"
+         data-dojo-props="region:'bottom'">
+        No. of locations:<input type="text" id="amt">
+        <div>Address :
+            <input type="text" id="address" size="60" value=""/>
+            <button id="locate" data-dojo-type="dijit/form/Button">Locate</button>
+        </div>
+
+        <button id="locate1" data-dojo-type="dijit/form/Button" onclick="multi1()">compare</button>
+
+        <div id="currentextent"></div>
+        <div id="resultsdiv"></div>
+        <h3> <div id="distance1"></div></h3>
+        <h3> <div id="distance2"></div></h3>
+        <h3> <div id="distance3"></div></h3>
+        <h3> <div id="result1"></div></h3>
+
+    </div>
+
+</div>
+</body>
+
+</html>
